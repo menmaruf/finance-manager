@@ -25,11 +25,7 @@ Backend приложение для управления личными фина
 - SQLite
 - JWT Authentication
 
-### Frontend
-- React 18
-- Chart.js
-- Axios
-- React Router
+
 
 ## Установка и запуск
 
@@ -52,18 +48,6 @@ npm start
 
 Приложение откроется на http://localhost:3000
 
-## API Endpoints
-
-Всего: 29 endpoints
-
-- Аутентификация: 5 endpoints
-- Категории: 5 endpoints
-- Транзакции: 5 endpoints
-- Бюджеты: 5 endpoints
-- Цели: 6 endpoints
-- Аналитика: 3 endpoints
-
-Подробное описание в файле ENDPOINTS.md
 
 ## Админ панель
 
@@ -76,24 +60,16 @@ Password: (установить через `python manage.py changepassword admi
 ```
 finance_manager/
 ├── backend/              # Django настройки
-├── api/                  # API приложение
+├── api/                  
 │   ├── models.py        # Модели данных
-│   ├── serializers.py   # Сериализаторы
-│   ├── views.py         # Представления
+│   ├── serializers.py   
+│   ├── views.py         
 │   └── urls.py          # Маршруты
-├── frontend/            # React приложение
+├── frontend/            
 │   └── src/
-│       ├── components/  # Компоненты
+│       ├── components/  
 │       └── api.js       # API клиент
-└── db.sqlite3          # База данных
+└── db.sqlite3          
 ```
 
-## Автор
 
-Студент группы 721-1
-Томский государственный университет систем управления и радиоэлектроники (ТУСУР)
-Кафедра КИБЭВС
-
-## Дата
-
-Апрель 2026
