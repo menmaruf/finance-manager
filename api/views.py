@@ -3,7 +3,9 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.db.models import Sum, Q
+from django.db.models import Sum, Q, Count
+from django.db.models.functions import TruncMonth
+from dateutil.relativedelta import relativedelta
 from datetime import datetime, timedelta
 from .models import User, Category, Transaction, Budget, Goal
 from .serializers import (
@@ -120,7 +122,8 @@ class GoalViewSet(viewsets.ModelViewSet):
         amount = request.data.get('amount', 0)
 
         try:
-            amount = float(amount)
+            from decimal import Decimal
+            amount = Decimal(str(amount))
             if amount <= 0:
                 return Response({'error': 'Сумма должна быть больше нуля'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -131,7 +134,7 @@ class GoalViewSet(viewsets.ModelViewSet):
 
             serializer = self.get_serializer(goal)
             return Response(serializer.data)
-        except ValueError:
+        except (ValueError, TypeError):
             return Response({'error': 'Неверный формат суммы'}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -143,6 +146,14 @@ def analytics_summary(request):
     # Получаем параметры периода
     period = request.query_params.get('period', 'month')  # day, week, month, year
 
+    # Валидация периода
+    valid_periods = ['day', 'week', 'month', 'year']
+    if period not in valid_periods:
+        return Response(
+            {'error': f'Неверный период. Допустимые значения: {", ".join(valid_periods)}'},
+            status=400
+        )
+
     today = datetime.now().date()
     if period == 'day':
         start_date = today
@@ -150,10 +161,8 @@ def analytics_summary(request):
         start_date = today - timedelta(days=7)
     elif period == 'month':
         start_date = today - timedelta(days=30)
-    elif period == 'year':
+    else:  # year
         start_date = today - timedelta(days=365)
-    else:
-        start_date = today - timedelta(days=30)
 
     # Получаем транзакции за период
     transactions = Transaction.objects.filter(user=user, date__gte=start_date, date__lte=today)
@@ -182,6 +191,14 @@ def analytics_by_category(request):
     period = request.query_params.get('period', 'month')
     transaction_type = request.query_params.get('type', 'expense')  # income or expense
 
+    # Валидация периода
+    valid_periods = ['day', 'week', 'month', 'year']
+    if period not in valid_periods:
+        return Response(
+            {'error': f'Неверный период. Допустимые значения: {", ".join(valid_periods)}'},
+            status=400
+        )
+
     today = datetime.now().date()
     if period == 'day':
         start_date = today
@@ -189,10 +206,8 @@ def analytics_by_category(request):
         start_date = today - timedelta(days=7)
     elif period == 'month':
         start_date = today - timedelta(days=30)
-    elif period == 'year':
+    else:  # year
         start_date = today - timedelta(days=365)
-    else:
-        start_date = today - timedelta(days=30)
 
     # Группируем по категориям
     categories = Category.objects.filter(user=user, type=transaction_type)
@@ -224,31 +239,48 @@ def analytics_trends(request):
 
     # Получаем данные за последние 12 месяцев
     today = datetime.now().date()
+    twelve_months_ago = today - relativedelta(months=11)
+    start_of_period = twelve_months_ago.replace(day=1)
+
+    # Оптимизированный запрос с использованием annotate
+    # Группируем транзакции по месяцам
+    income_by_month = Transaction.objects.filter(
+        user=user,
+        category__type='income',
+        date__gte=start_of_period,
+        date__lte=today
+    ).annotate(
+        month=TruncMonth('date')
+    ).values('month').annotate(
+        total=Sum('amount')
+    ).order_by('month')
+
+    expenses_by_month = Transaction.objects.filter(
+        user=user,
+        category__type='expense',
+        date__gte=start_of_period,
+        date__lte=today
+    ).annotate(
+        month=TruncMonth('date')
+    ).values('month').annotate(
+        total=Sum('amount')
+    ).order_by('month')
+
+    # Преобразуем в словари для быстрого доступа
+    income_dict = {item['month'].strftime('%Y-%m'): item['total'] for item in income_by_month}
+    expenses_dict = {item['month'].strftime('%Y-%m'): item['total'] for item in expenses_by_month}
+
+    # Формируем результат за последние 12 месяцев
     result = []
+    for i in range(12):
+        month_date = today.replace(day=1) - relativedelta(months=11-i)
+        month_key = month_date.strftime('%Y-%m')
 
-    for i in range(11, -1, -1):
-        month_start = (today.replace(day=1) - timedelta(days=i*30)).replace(day=1)
-        if i > 0:
-            month_end = (today.replace(day=1) - timedelta(days=(i-1)*30)).replace(day=1) - timedelta(days=1)
-        else:
-            month_end = today
-
-        income = Transaction.objects.filter(
-            user=user,
-            category__type='income',
-            date__gte=month_start,
-            date__lte=month_end
-        ).aggregate(total=Sum('amount'))['total'] or 0
-
-        expenses = Transaction.objects.filter(
-            user=user,
-            category__type='expense',
-            date__gte=month_start,
-            date__lte=month_end
-        ).aggregate(total=Sum('amount'))['total'] or 0
+        income = income_dict.get(month_key, 0)
+        expenses = expenses_dict.get(month_key, 0)
 
         result.append({
-            'month': month_start.strftime('%Y-%m'),
+            'month': month_key,
             'income': income,
             'expenses': expenses,
             'balance': income - expenses

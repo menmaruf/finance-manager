@@ -84,13 +84,16 @@ class BudgetSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
     def get_spent_amount(self, obj):
+        if not obj.category or not obj.start_date or not obj.end_date:
+            return 0
+
         transactions = Transaction.objects.filter(
             user=obj.user,
             category=obj.category,
             date__gte=obj.start_date,
             date__lte=obj.end_date
         )
-        return sum(t.amount for t in transactions)
+        return sum(t.amount for t in transactions) if transactions.exists() else 0
 
     def validate(self, data):
         if data['start_date'] > data['end_date']:
